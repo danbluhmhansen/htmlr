@@ -1,8 +1,14 @@
-use std::error::Error;
-
-use axum::{routing::get, Router};
+use axum::{extract::State, routing::get, Router};
 use maud::{html, Markup, DOCTYPE};
 use railwind::{parse_to_string, CollectionOptions, Source};
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
+use std::{error::Error, time::Duration};
+
+#[derive(Clone, PartialEq)]
+struct Game {
+    slug: String,
+    name: String,
+}
 
 struct Link<'a> {
     href: &'a str,
@@ -29,9 +35,7 @@ fn page(children: Markup) -> Markup {
                     }
                 }
             }
-            main .container .mx-auto .flex .flex-col .items-center .justify-center ."gap-4" {
-                (children)
-            }
+            main .container .mx-auto .flex .flex-col .items-center .justify-center ."gap-4" { (children) }
         }
     };
     let style = parse_to_string(
@@ -71,19 +75,62 @@ async fn index() -> Markup {
     })
 }
 
-async fn games() -> Markup {
+async fn games(State(pool): State<Pool<Postgres>>) -> Markup {
+    let games = sqlx::query_as!(Game, "SELECT slug, name FROM game;")
+        .fetch_all(&pool)
+        .await;
     page(html! {
-        h1 { "Games" }
+        h1 .text-xl .font-bold { "Games" }
+        @match games {
+            Ok(games) => {
+                table {
+                    thead {
+                        tr {
+                            th ."p-2" .border ."border-slate-300" ."dark:border-slate-600";
+                            th ."p-2" .border ."border-slate-300" ."dark:border-slate-600" { "Name" }
+                        }
+                    }
+                    tbody {
+                        @for game in games {
+                            tr {
+                                td ."p-2" .border ."border-slate-300" ."dark:border-slate-600" {
+                                    input
+                                        type="checkbox"
+                                        name="slugs"
+                                        value=(game.slug)
+                                        ."dark:bg-slate-900"
+                                        ."dark:border-white";
+                                }
+                                td ."p-2" .border ."border-slate-300" ."dark:border-slate-600" {
+                                    a href=(format!("/games/{}", game.slug)) ."hover:text-violet-500" { (game.name) }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            Err(_) => {
+                p { "No games..." }
+            }
+        }
     })
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .acquire_timeout(Duration::from_secs(3))
+        .connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:postgres@localhost:5432/funicular".to_string()
+        }))
+        .await?;
+
     axum::Server::bind(&"0.0.0.0:1111".parse()?)
         .serve(
             Router::new()
                 .route("/", get(index))
-                .route("/games", get(games))
+                .route("/games", get(games).with_state(pool))
                 .into_make_service(),
         )
         .await?;
