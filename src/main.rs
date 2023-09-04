@@ -1,6 +1,12 @@
-use axum::{extract::State, routing::get, Router};
+use axum::{
+    extract::{Query, State},
+    routing::get,
+    Router,
+};
+use const_format::formatcp;
 use maud::{html, Markup, DOCTYPE};
 use railwind::{parse_to_string, CollectionOptions, Source};
+use serde::Deserialize;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::{error::Error, sync::Arc, time::Duration};
 
@@ -66,8 +72,10 @@ fn page(children: Markup) -> Markup {
 }
 
 const BUTTON: &str = "bg-transparent border font-medium focus:outline-none px-4 py-2 focus:ring-4 rounded text-sm text-center hover:text-white inline-flex";
-const BUTTON_PRIMARY: &str = "hover:bg-violet-500 dark:hover:bg-violet-400 border-violet-600 dark:border-violet-300 focus:ring-violet-400 dark:focus:ring-violet-500 text-violet-600 dark:text-violet-300";
-const BUTTON_ERROR: &str = "hover:bg-red-500 dark:hover:bg-red-400 border-red-600 dark:border-red-300 focus:ring-red-400 dark:focus:ring-red-500 text-red-600 dark:text-red-300";
+const BUTTON_PRIMARY: &str = formatcp!("{BUTTON} {}", " hover:bg-violet-500 dark:hover:bg-violet-400 border-violet-600 dark:border-violet-300 focus:ring-violet-400 dark:focus:ring-violet-500 text-violet-600 dark:text-violet-300");
+const BUTTON_ERROR: &str = formatcp!("{BUTTON} {}", " hover:bg-red-500 dark:hover:bg-red-400 border-red-600 dark:border-red-300 focus:ring-red-400 dark:focus:ring-red-500 text-red-600 dark:text-red-300");
+
+const TD: &str = "p-2 border border-slate-300 dark:border-slate-600";
 
 async fn index() -> Markup {
     page(html! {
@@ -79,7 +87,14 @@ async fn index() -> Markup {
     })
 }
 
-async fn games(State(state): State<Arc<AppState>>) -> Markup {
+#[derive(Deserialize)]
+struct GamesQuery {
+    #[serde(default)]
+    add: bool,
+}
+
+async fn games(Query(query): Query<GamesQuery>, State(state): State<Arc<AppState>>) -> Markup {
+    println!("{}", query.add);
     let games = sqlx::query_as!(Game, "SELECT slug, name FROM game;")
         .fetch_all(&state.pool)
         .await;
@@ -87,25 +102,25 @@ async fn games(State(state): State<Arc<AppState>>) -> Markup {
         h1 .text-xl .font-bold { "Games" }
         form method="post" .flex .flex-col .items-center .justify-center ."gap-4" {
             .flex .flex-row ."gap-2" {
-                a href="/" class={ (BUTTON) " " (BUTTON_PRIMARY) } { "Add" }
-                button type="submit" name="submit" value="remove" class={ (BUTTON) " " (BUTTON_ERROR) } { "Remove" }
+                a href="/games?add" class=(BUTTON_PRIMARY) { "Add" }
+                button type="submit" name="submit" value="remove" class=(BUTTON_ERROR) { "Remove" }
             }
             @match games {
                 Ok(games) => {
                     table {
                         thead {
                             tr {
-                                th ."p-2" .border ."border-slate-300" ."dark:border-slate-600";
-                                th ."p-2" .border ."border-slate-300" ."dark:border-slate-600" { "Name" }
+                                th class=(TD);
+                                th class=(TD) { "Name" }
                             }
                         }
                         tbody {
                             @for game in games {
                                 tr {
-                                    td ."p-2" .border ."border-slate-300" ."dark:border-slate-600" {
+                                    td class=(TD) {
                                         input type="checkbox" name="slugs" value=(game.slug);
                                     }
-                                    td ."p-2" .border ."border-slate-300" ."dark:border-slate-600" {
+                                    td class=(TD) {
                                         a href=(format!("/games/{}", game.slug)) ."hover:text-violet-500" { (game.name) }
                                     }
                                 }
@@ -125,17 +140,23 @@ struct AppState {
     pool: Pool<Postgres>,
 }
 
+impl AppState {
+    fn new(pool: Pool<Postgres>) -> Self {
+        Self { pool }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let shared_state = Arc::new(AppState {
-        pool: PgPoolOptions::new()
+    let shared_state = Arc::new(AppState::new(
+        PgPoolOptions::new()
             .max_connections(5)
             .acquire_timeout(Duration::from_secs(3))
             .connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| {
                 "postgres://postgres:postgres@localhost:5432/funicular".to_string()
             }))
             .await?,
-    });
+    ));
 
     axum::Server::bind(&"0.0.0.0:1111".parse()?)
         .serve(
