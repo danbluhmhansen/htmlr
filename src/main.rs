@@ -2,7 +2,7 @@ use axum::{extract::State, routing::get, Router};
 use maud::{html, Markup, DOCTYPE};
 use railwind::{parse_to_string, CollectionOptions, Source};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
-use std::{error::Error, time::Duration};
+use std::{error::Error, sync::Arc, time::Duration};
 
 #[derive(Clone, PartialEq)]
 struct Game {
@@ -40,7 +40,7 @@ fn page(children: Markup) -> Markup {
     };
     let style = parse_to_string(
         Source::String(body.to_owned().into_string(), CollectionOptions::Html),
-        true,
+        false,
         &mut vec![],
     );
     html! {
@@ -65,6 +65,10 @@ fn page(children: Markup) -> Markup {
     }
 }
 
+const BUTTON: &str = "bg-transparent border font-medium focus:outline-none px-4 py-2 focus:ring-4 rounded text-sm text-center hover:text-white inline-flex";
+const BUTTON_PRIMARY: &str = "hover:bg-violet-500 dark:hover:bg-violet-400 border-violet-600 dark:border-violet-300 focus:ring-violet-400 dark:focus:ring-violet-500 text-violet-600 dark:text-violet-300";
+const BUTTON_ERROR: &str = "hover:bg-red-500 dark:hover:bg-red-400 border-red-600 dark:border-red-300 focus:ring-red-400 dark:focus:ring-red-500 text-red-600 dark:text-red-300";
+
 async fn index() -> Markup {
     page(html! {
         h1 .text-lg { "Hello, World!" }
@@ -75,62 +79,70 @@ async fn index() -> Markup {
     })
 }
 
-async fn games(State(pool): State<Pool<Postgres>>) -> Markup {
+async fn games(State(state): State<Arc<AppState>>) -> Markup {
     let games = sqlx::query_as!(Game, "SELECT slug, name FROM game;")
-        .fetch_all(&pool)
+        .fetch_all(&state.pool)
         .await;
     page(html! {
         h1 .text-xl .font-bold { "Games" }
-        @match games {
-            Ok(games) => {
-                table {
-                    thead {
-                        tr {
-                            th ."p-2" .border ."border-slate-300" ."dark:border-slate-600";
-                            th ."p-2" .border ."border-slate-300" ."dark:border-slate-600" { "Name" }
-                        }
-                    }
-                    tbody {
-                        @for game in games {
+        form method="post" .flex .flex-col .items-center .justify-center ."gap-4" {
+            .flex .flex-row ."gap-2" {
+                a href="/" class={ (BUTTON) " " (BUTTON_PRIMARY) } { "Add" }
+                button type="submit" name="submit" value="remove" class={ (BUTTON) " " (BUTTON_ERROR) } { "Remove" }
+            }
+            @match games {
+                Ok(games) => {
+                    table {
+                        thead {
                             tr {
-                                td ."p-2" .border ."border-slate-300" ."dark:border-slate-600" {
-                                    input
-                                        type="checkbox"
-                                        name="slugs"
-                                        value=(game.slug)
-                                        ."dark:bg-slate-900"
-                                        ."dark:border-white";
-                                }
-                                td ."p-2" .border ."border-slate-300" ."dark:border-slate-600" {
-                                    a href=(format!("/games/{}", game.slug)) ."hover:text-violet-500" { (game.name) }
+                                th ."p-2" .border ."border-slate-300" ."dark:border-slate-600";
+                                th ."p-2" .border ."border-slate-300" ."dark:border-slate-600" { "Name" }
+                            }
+                        }
+                        tbody {
+                            @for game in games {
+                                tr {
+                                    td ."p-2" .border ."border-slate-300" ."dark:border-slate-600" {
+                                        input type="checkbox" name="slugs" value=(game.slug);
+                                    }
+                                    td ."p-2" .border ."border-slate-300" ."dark:border-slate-600" {
+                                        a href=(format!("/games/{}", game.slug)) ."hover:text-violet-500" { (game.name) }
+                                    }
                                 }
                             }
                         }
                     }
+                },
+                Err(_) => {
+                    p { "No games..." }
                 }
-            },
-            Err(_) => {
-                p { "No games..." }
             }
         }
     })
 }
 
+struct AppState {
+    pool: Pool<Postgres>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .acquire_timeout(Duration::from_secs(3))
-        .connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-            "postgres://postgres:postgres@localhost:5432/funicular".to_string()
-        }))
-        .await?;
+    let shared_state = Arc::new(AppState {
+        pool: PgPoolOptions::new()
+            .max_connections(5)
+            .acquire_timeout(Duration::from_secs(3))
+            .connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+                "postgres://postgres:postgres@localhost:5432/funicular".to_string()
+            }))
+            .await?,
+    });
 
     axum::Server::bind(&"0.0.0.0:1111".parse()?)
         .serve(
             Router::new()
                 .route("/", get(index))
-                .route("/games", get(games).with_state(pool))
+                .route("/games", get(games).post(games))
+                .with_state(shared_state)
                 .into_make_service(),
         )
         .await?;
