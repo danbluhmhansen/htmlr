@@ -1,14 +1,8 @@
-use axum::{
-    extract::{Query, State},
-    http::header,
-    response::IntoResponse,
-    routing::get,
-    Router,
-};
+use axum::{extract::State, http::header, response::IntoResponse, routing::get, Router};
 use const_format::formatcp;
 use maud::{html, Markup, DOCTYPE};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
-use std::{collections::HashMap, error::Error, sync::Arc, time::Duration};
+use std::{error::Error, sync::Arc, time::Duration};
 
 const STYLE: &str = include_str!("site.css");
 
@@ -29,7 +23,7 @@ impl<'a> Link<'a> {
     }
 }
 
-fn page(children: Markup) -> Markup {
+fn page(children: Markup, pre: Option<Markup>) -> Markup {
     let links = vec![
         Link::new("/", html! { "Home" }),
         Link::new("/games", html! { "Games" }),
@@ -47,7 +41,8 @@ fn page(children: Markup) -> Markup {
                     href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxZW0iIGhlaWdodD0iMWVtIiB2aWV3Qm94PSIwIDAgMjQgMjQiPjxwYXRoIGZpbGw9Im5vbmUiIHN0cm9rZT0iY3VycmVudENvbG9yIiBkPSJNNy40NzggMTguMTQ5YTEuNSAxLjUgMCAwIDEtMi45NTQuNTJtMTEuOTk5LTIuMjVhMS41IDEuNSAwIDAgMCAyLjk1NC0uNTJNOCAxMS43NThWNC42MzZtOCA1LjY0OFYzLjE4Mm02Ljk3IDYuMjNjLjAxOS0uNDc3LjAzLS45OC4wMy0xLjUwM0MyMyA0LjQxIDIyLjUgMiAyMi41IDJsLTIxIDMuODE4UzEgOC40MSAxIDExLjkxYzAgLjUyMy4wMTEgMS4wMjIuMDMgMS40OTJtMjEuOTQtMy45OUMyMi44NjIgMTIuMTI3IDIyLjUgMTQgMjIuNSAxNGwtMjEgMy44MThzLS4zNjItMS43NDMtLjQ3LTQuNDE3bTIxLjk0LTMuOTljLTEwLjY1Ni45NzMtMjEuMzAyIDMuODE4LTIxLjk0IDMuOTlNMjMgMTlMMSAyMyIvPjwvc3ZnPg==";
                 link rel="stylesheet" type="text/css" href="/site.css";
             }
-            body class="dark:text-white dark:bg-slate-900" {
+            body class="min-h-screen dark:text-white dark:bg-slate-900" {
+                @if let Some(pre) = pre { (pre) }
                 nav class="py-4" {
                     ul class="flex flex-col gap-4 justify-center items-center sm:flex-row" {
                         @for link in &links {
@@ -61,14 +56,14 @@ fn page(children: Markup) -> Markup {
     }
 }
 
-const BUTTON: &str = "bg-transparent border font-medium focus:outline-none px-4 py-2 focus:ring-4 rounded text-sm text-center hover:text-white inline-flex";
-const BUTTON_PRIMARY: &str = formatcp!("{BUTTON} {}", " hover:bg-violet-500 dark:hover:bg-violet-400 border-violet-600 dark:border-violet-300 focus:ring-violet-400 dark:focus:ring-violet-500 text-violet-600 dark:text-violet-300");
-const BUTTON_SUCCESS: &str = formatcp!("{BUTTON} {}", " hover:bg-green-500 dark:hover:bg-green-400 border-green-600 dark:border-green-300 focus:ring-green-400 dark:focus:ring-green-500 text-green-600 dark:text-green-300");
-const BUTTON_ERROR: &str = formatcp!("{BUTTON} {}", " hover:bg-red-500 dark:hover:bg-red-400 border-red-600 dark:border-red-300 focus:ring-red-400 dark:focus:ring-red-500 text-red-600 dark:text-red-300");
+const BUTTON: &str = "inline-flex items-center py-2 px-4 text-sm font-medium text-center bg-transparent rounded border hover:text-white focus:ring-4 focus:outline-none";
+const BUTTON_PRIMARY: &str = formatcp!("{BUTTON} {}", " text-violet-600 border-violet-600 dark:text-violet-300 dark:border-violet-300 hover:bg-violet-500 focus:ring-violet-400 dark:hover:bg-violet-400 dark:focus:ring-violet-500");
+const BUTTON_SUCCESS: &str = formatcp!("{BUTTON} {}", " text-green-600 border-green-600 dark:text-green-300 dark:border-green-300 hover:bg-green-500 focus:ring-green-400 dark:hover:bg-green-400 dark:focus:ring-green-500");
+const BUTTON_ERROR: &str = formatcp!("{BUTTON} {}", " text-red-600 border-red-600 dark:text-red-300 dark:border-red-300 hover:bg-red-500 focus:ring-red-400 dark:hover:bg-red-400 dark:focus:ring-red-500");
 
 const TD: &str = "p-2 border border-slate-300 dark:border-slate-600";
 
-const DIALOG: &str = "p-4 dark:bg-slate-900 dark:text-white rounded border sm:min-w-sm open:flex open:flex-col gap-4 fixed inset-0 z-20";
+const DIALOG: &str = "hidden z-10 justify-center items-center w-full h-full target:flex bg-black/50 backdrop-blur-sm";
 
 async fn style() -> impl IntoResponse {
     (
@@ -81,85 +76,87 @@ async fn style() -> impl IntoResponse {
 }
 
 async fn index() -> Markup {
-    page(html! {
-        h1 class="text-lg" { "Hello, World!" }
-        p class="p-2 text-red" {
-            "Consequatur accusamus itaque illo ut saepe corporis voluptatem. Aut provident quasi voluptatem. Sunt non
-            fuga officiis fugit aliquam numquam hic. Voluptatem ratione magni dolor ut."
-        }
-    })
+    page(
+        html! {
+            h1 class="text-lg" { "Hello, World!" }
+            p class="p-2 text-red-500" {
+                "Consequatur accusamus itaque illo ut saepe corporis voluptatem. Aut provident quasi voluptatem. Sunt non
+                fuga officiis fugit aliquam numquam hic. Voluptatem ratione magni dolor ut."
+            }
+        },
+        None,
+    )
 }
 
-async fn games(
-    Query(query): Query<HashMap<String, String>>,
-    State(state): State<Arc<AppState>>,
-) -> Markup {
+async fn games(State(state): State<Arc<AppState>>) -> Markup {
     let games = sqlx::query_as!(Game, "SELECT slug, name FROM game;")
         .fetch_all(&state.pool)
         .await;
-    page(html! {
-        @if query.contains_key("add") {
-            dialog open class=(DIALOG) {
-                h2 class="text-xl"{ "Add Game" }
-                form method="post" class="flex flex-col gap-4 justify-center" {
-                    input
-                      type="text"
-                      name="name"
-                      placeholder="Name"
-                      required
-                      autofocus
-                      class="rounded invalid:border-red dark:bg-slate-900";
-                    textarea
-                      name="description"
-                      placeholder="Description"
-                      class="rounded invalid:border-red dark:bg-slate-900" {}
-                    div class="flex justify-between" {
-                        button type="submit" name="submit" value="add" class=(BUTTON_SUCCESS) { "Submit" }
-                        a href="/games" class=(BUTTON_PRIMARY) { "Close" }
-                    }
+    page(
+        html! {
+            h1 class="text-xl font-bold" { "Games" }
+            form method="post" class="flex flex-col gap-4 justify-center items-center" {
+                div class="flex flex-row gap-2" {
+                    a href="#add" class=(BUTTON_PRIMARY) { span class="w-4 h-4 i-tabler-plus"; }
+                    button type="submit" name="submit" value="remove" class=(BUTTON_ERROR) { span class="w-4 h-4 i-tabler-trash"; }
                 }
-            }
-            a href="/games" class="fixed inset-0 z-10 bg-black/50 backdrop-blur-sm" {}
-        }
-        h1 class="text-xl font-bold" { "Games" }
-        form method="post" class="flex flex-col gap-4 justify-center items-center" {
-            div class="flex flex-row gap-2" {
-                a href="/games?add" class=(BUTTON_PRIMARY) {
-                    span class="w-4 h-4 i-tabler-plus";
-                }
-                button type="submit" name="submit" value="remove" class=(BUTTON_ERROR) { "Remove" }
-            }
-            @match games {
-                Ok(games) => {
-                    table {
-                        thead {
-                            tr {
-                                th class=(TD);
-                                th class=(TD) { "Name" }
-                            }
-                        }
-                        tbody {
-                            @for game in games {
+                @match games {
+                    Ok(games) => {
+                        table {
+                            thead {
                                 tr {
-                                    td class=(TD) {
-                                        input type="checkbox" name="slugs" value=(game.slug) class="dark:bg-slate-900";
-                                    }
-                                    td class=(TD) {
-                                        a href=(format!("/games/{}", game.slug)) class="hover:text-violet-500" {
-                                            (game.name)
+                                    th class=(TD);
+                                    th class=(TD) { "Name" }
+                                }
+                            }
+                            tbody {
+                                @for game in games {
+                                    tr {
+                                        td class=(TD) {
+                                            input type="checkbox" name="slugs" value=(game.slug) class="dark:bg-slate-900";
+                                        }
+                                        td class=(TD) {
+                                            a href=(format!("/games/{}", game.slug)) class="hover:text-violet-500" {
+                                                (game.name)
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
+                    },
+                    Err(_) => {
+                        p { "No games..." }
                     }
-                },
-                Err(_) => {
-                    p { "No games..." }
                 }
             }
-        }
-    })
+        },
+        Some(html! {
+            dialog id="add" class=(DIALOG) {
+                div class="flex z-10 flex-col gap-4 p-4 max-w-sm rounded border dark:text-white dark:bg-slate-900" {
+                    h2 class="text-xl" { "Add Game" }
+                    form method="post" class="flex flex-col gap-4 justify-center" {
+                        input
+                          type="text"
+                          name="name"
+                          placeholder="Name"
+                          required
+                          autofocus
+                          class="rounded invalid:border-red dark:bg-slate-900";
+                        textarea
+                          name="description"
+                          placeholder="Description"
+                          class="rounded invalid:border-red dark:bg-slate-900" {}
+                        div class="flex justify-between" {
+                            button type="submit" name="submit" value="add" class=(BUTTON_SUCCESS) { span class="w-4 h-4 i-tabler-check"; }
+                            a href="#!" class=(BUTTON_PRIMARY) { span class="w-4 h-4 i-tabler-x"; }
+                        }
+                    }
+                }
+                a href="#!" class="fixed inset-0" {}
+            }
+        }),
+    )
 }
 
 struct AppState {
