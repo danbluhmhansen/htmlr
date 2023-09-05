@@ -61,8 +61,6 @@ const BUTTON_PRIMARY: &str = formatcp!("{BUTTON} {}", " text-violet-600 border-v
 const BUTTON_SUCCESS: &str = formatcp!("{BUTTON} {}", " text-green-600 border-green-600 dark:text-green-300 dark:border-green-300 hover:bg-green-500 focus:ring-green-400 dark:hover:bg-green-400 dark:focus:ring-green-500");
 const BUTTON_ERROR: &str = formatcp!("{BUTTON} {}", " text-red-600 border-red-600 dark:text-red-300 dark:border-red-300 hover:bg-red-500 focus:ring-red-400 dark:hover:bg-red-400 dark:focus:ring-red-500");
 
-const TD: &str = "p-2 border border-slate-300 dark:border-slate-600";
-
 const DIALOG: &str = "hidden z-10 justify-center items-center w-full h-full target:flex bg-black/50 backdrop-blur-sm";
 
 async fn style() -> impl IntoResponse {
@@ -96,37 +94,39 @@ async fn games(State(state): State<Arc<AppState>>) -> Markup {
         html! {
             h1 class="text-xl font-bold" { "Games" }
             form method="post" class="flex flex-col gap-4 justify-center items-center" {
-                div class="flex flex-row gap-2" {
-                    a href="#add" class=(BUTTON_PRIMARY) { span class="w-4 h-4 i-tabler-plus"; }
-                    button type="submit" name="submit" value="remove" class=(BUTTON_ERROR) { span class="w-4 h-4 i-tabler-trash"; }
-                }
-                @match games {
-                    Ok(games) => {
-                        table {
-                            thead {
-                                tr {
-                                    th class=(TD);
-                                    th class=(TD) { "Name" }
-                                }
+                div class="relative overflow-x-auto shadow-md sm:rounded" {
+                    table class="w-full" {
+                        caption class="bg-white dark:bg-slate-800 p-3 space-x-2" {
+                            a href="#add" class=(BUTTON_PRIMARY) { span class="w-4 h-4 i-tabler-plus"; }
+                            button type="submit" name="submit" value="remove" class=(BUTTON_ERROR) { span class="w-4 h-4 i-tabler-trash"; }
+                        }
+                        thead class="text-xs text-gray-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-gray-400" {
+                            tr {
+                                th class="p-3" { input type="checkbox" name="slugs-all" class="dark:bg-slate-900"; }
+                                th class="px-6 py-3" { "Name" }
                             }
-                            tbody {
-                                @for game in games {
-                                    tr {
-                                        td class=(TD) {
-                                            input type="checkbox" name="slugs" value=(game.slug) class="dark:bg-slate-900";
-                                        }
-                                        td class=(TD) {
-                                            a href=(format!("/games/{}", game.slug)) class="hover:text-violet-500" {
-                                                (game.name)
+                        }
+                        tbody {
+                            @match games {
+                                Ok(games) => {
+                                    @for game in games {
+                                        tr class="bg-white border-b last:border-0 dark:bg-slate-800 dark:border-slate-700" {
+                                            td class="p-3" {
+                                                input type="checkbox" name="slugs" value=(game.slug) class="dark:bg-slate-900";
+                                            }
+                                            td class="px-6 py-3" {
+                                                a href=(format!("/games/{}", game.slug)) class="hover:text-violet-500" {
+                                                    (game.name)
+                                                }
                                             }
                                         }
                                     }
+                                },
+                                Err(_) => {
+                                    p { "No games..." }
                                 }
                             }
                         }
-                    },
-                    Err(_) => {
-                        p { "No games..." }
                     }
                 }
             }
