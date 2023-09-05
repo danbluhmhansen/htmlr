@@ -6,9 +6,8 @@ use axum::{
 use const_format::formatcp;
 use maud::{html, Markup, DOCTYPE};
 use railwind::{parse_to_string, CollectionOptions, Source};
-use serde::Deserialize;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
-use std::{error::Error, sync::Arc, time::Duration};
+use std::{collections::HashMap, error::Error, sync::Arc, time::Duration};
 
 #[derive(Clone, PartialEq)]
 struct Game {
@@ -33,15 +32,15 @@ fn page(children: Markup) -> Markup {
         Link::new("/games", html! { "Games" }),
     ];
     let body = html! {
-        body ."dark:bg-slate-900" ."dark:text-white" {
-            nav ."py-4" {
-                ul .flex .flex-col ."sm:flex-row" .items-center .justify-center ."gap-4" {
+        body class="dark:text-white dark:bg-slate-900" {
+            nav class="py-4" {
+                ul class="flex flex-col gap-4 justify-center items-center sm:flex-row" {
                     @for link in &links {
-                        li { a href=(link.href) ."hover:text-violet-500" { (link.children) } }
+                        li { a href=(link.href) class="hover:text-violet-500" { (link.children) } }
                     }
                 }
             }
-            main .container .mx-auto .flex .flex-col .items-center .justify-center ."gap-4" { (children) }
+            main class="container flex flex-col gap-4 justify-center items-center mx-auto" { (children) }
         }
     };
     let style = parse_to_string(
@@ -77,31 +76,52 @@ const BUTTON_ERROR: &str = formatcp!("{BUTTON} {}", " hover:bg-red-500 dark:hove
 
 const TD: &str = "p-2 border border-slate-300 dark:border-slate-600";
 
+const DIALOG: &str = "p-4 dark:bg-slate-900 dark:text-white rounded border sm:min-w-sm open:flex open:flex-col gap-4 fixed inset-0 z-1";
+
 async fn index() -> Markup {
     page(html! {
-        h1 .text-lg { "Hello, World!" }
-        p ."text-red-500" ."p-2" {
+        h1 class="text-lg" { "Hello, World!" }
+        p class="p-2 text-red-500" {
             "Consequatur accusamus itaque illo ut saepe corporis voluptatem. Aut provident quasi voluptatem. Sunt non
             fuga officiis fugit aliquam numquam hic. Voluptatem ratione magni dolor ut."
         }
     })
 }
 
-#[derive(Deserialize)]
-struct GamesQuery {
-    #[serde(default)]
-    add: bool,
-}
-
-async fn games(Query(query): Query<GamesQuery>, State(state): State<Arc<AppState>>) -> Markup {
-    println!("{}", query.add);
+async fn games(
+    Query(query): Query<HashMap<String, String>>,
+    State(state): State<Arc<AppState>>,
+) -> Markup {
     let games = sqlx::query_as!(Game, "SELECT slug, name FROM game;")
         .fetch_all(&state.pool)
         .await;
     page(html! {
-        h1 .text-xl .font-bold { "Games" }
-        form method="post" .flex .flex-col .items-center .justify-center ."gap-4" {
-            .flex .flex-row ."gap-2" {
+        @if query.contains_key("add") {
+            dialog open class=(DIALOG) {
+                h2 class="text-xl"{ "Add Game" }
+                form method="post" class="flex flex-col gap-4 justify-center" {
+                    input
+                      type="text"
+                      name="name"
+                      placeholder="Name"
+                      required
+                      autofocus
+                      class="py-1 px-2 rounded border invalid:border-red dark:bg-slate-900";
+                    textarea
+                      name="description"
+                      placeholder="Description"
+                      class="py-1 px-2 rounded border invalid:border-red dark:bg-slate-900" {}
+                    div class="flex justify-between" {
+                        button type="submit" name="submit" value="add" class=(BUTTON_PRIMARY) { "Submit" }
+                        a href="/games" class=(BUTTON_PRIMARY) { "Close" }
+                    }
+                }
+            }
+            a href="/games" class="fixed inset-0 bg-black/50" {}
+        }
+        h1 class="text-xl font-bold" { "Games" }
+        form method="post" class="flex flex-col gap-4 justify-center items-center" {
+            div class="flex flex-row gap-2" {
                 a href="/games?add" class=(BUTTON_PRIMARY) { "Add" }
                 button type="submit" name="submit" value="remove" class=(BUTTON_ERROR) { "Remove" }
             }
@@ -121,7 +141,7 @@ async fn games(Query(query): Query<GamesQuery>, State(state): State<Arc<AppState
                                         input type="checkbox" name="slugs" value=(game.slug);
                                     }
                                     td class=(TD) {
-                                        a href=(format!("/games/{}", game.slug)) ."hover:text-violet-500" { (game.name) }
+                                        a href=(format!("/games/{}", game.slug)) class="hover:text-violet-500" { (game.name) }
                                     }
                                 }
                             }
