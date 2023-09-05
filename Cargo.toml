@@ -3,13 +3,10 @@ name = "htmlr"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 axum = "0.6.20"
 const_format = "0.2.31"
 maud = { version = "0.25.0", features = ["axum"] }
-railwind = "0.1.5"
 serde = { version = "1.0.188", features = ["derive"] }
 sqlx = { version = "0.7.1", features = ["runtime-tokio", "tls-native-tls", "postgres", "uuid"] }
 tokio = { version = "1.32.0", features = ["full"] }

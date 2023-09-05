@@ -1,0 +1,20 @@
+{
+  "name": "htmlr",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "bld": "tailwindcss --input tailwind.css --output src/site.css",
+    "dev": "tailwindcss --input tailwind.css --output src/site.css --watch",
+    "min": "tailwindcss --input tailwind.css --output src/site.css --minify"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@egoist/tailwindcss-icons": "^1.1.0",
+    "@iconify-json/tabler": "^1.1.89",
+    "@tailwindcss/forms": "^0.5.6",
+    "tailwindcss": "^3.3.3"
+  }
+}
