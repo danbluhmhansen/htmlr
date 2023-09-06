@@ -1,4 +1,5 @@
 use axum::{extract::State, http::header, response::IntoResponse, routing::get, Router};
+use axum_typed_multipart::{TryFromMultipart, TypedMultipart};
 use const_format::formatcp;
 use maud::{html, Markup, DOCTYPE};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
@@ -73,7 +74,7 @@ async fn style() -> impl IntoResponse {
     )
 }
 
-async fn index() -> Markup {
+async fn index() -> impl IntoResponse {
     page(
         html! {
             h1 class="text-lg" { "Hello, World!" }
@@ -86,23 +87,22 @@ async fn index() -> Markup {
     )
 }
 
-async fn games(State(state): State<Arc<AppState>>) -> Markup {
-    let games = sqlx::query_as!(Game, "SELECT slug, name FROM game;")
-        .fetch_all(&state.pool)
-        .await;
+async fn games(games: Result<Vec<Game>, sqlx::Error>) -> Markup {
     page(
         html! {
             h1 class="text-xl font-bold" { "Games" }
-            form method="post" class="flex flex-col gap-4 justify-center items-center" {
+            form method="post" enctype="multipart/form-data" class="flex flex-col gap-4 justify-center items-center" {
                 div class="relative overflow-x-auto shadow-md sm:rounded" {
                     table class="w-full" {
                         caption class="bg-white dark:bg-slate-800 p-3 space-x-2" {
                             a href="#add" class=(BUTTON_PRIMARY) { span class="w-4 h-4 i-tabler-plus"; }
-                            button type="submit" name="submit" value="remove" class=(BUTTON_ERROR) { span class="w-4 h-4 i-tabler-trash"; }
+                            button type="submit" name="submit" value="remove" class=(BUTTON_ERROR) {
+                                span class="w-4 h-4 i-tabler-trash";
+                            }
                         }
                         thead class="text-xs text-gray-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-gray-400" {
                             tr {
-                                th class="p-3" { input type="checkbox" name="slugs-all" class="dark:bg-slate-900"; }
+                                th class="p-3" { input type="checkbox" name="slugs_all" class="dark:bg-slate-900"; }
                                 th class="px-6 py-3" { "Name" }
                             }
                         }
@@ -112,7 +112,11 @@ async fn games(State(state): State<Arc<AppState>>) -> Markup {
                                     @for game in games {
                                         tr class="bg-white border-b last:border-0 dark:bg-slate-800 dark:border-slate-700" {
                                             td class="p-3" {
-                                                input type="checkbox" name="slugs" value=(game.slug) class="dark:bg-slate-900";
+                                                input
+                                                    type="checkbox"
+                                                    name="slugs"
+                                                    value=(game.slug)
+                                                    class="dark:bg-slate-900";
                                             }
                                             td class="px-6 py-3" {
                                                 a href=(format!("/games/{}", game.slug)) class="hover:text-violet-500" {
@@ -135,18 +139,18 @@ async fn games(State(state): State<Arc<AppState>>) -> Markup {
             dialog id="add" class=(DIALOG) {
                 div class="flex z-10 flex-col gap-4 p-4 max-w-sm rounded border dark:text-white dark:bg-slate-900" {
                     h2 class="text-xl" { "Add Game" }
-                    form method="post" class="flex flex-col gap-4 justify-center" {
+                    form method="post" enctype="multipart/form-data" class="flex flex-col gap-4 justify-center" {
                         input
-                          type="text"
-                          name="name"
-                          placeholder="Name"
-                          required
-                          autofocus
-                          class="rounded invalid:border-red dark:bg-slate-900";
+                            type="text"
+                            name="name"
+                            placeholder="Name"
+                            required
+                            autofocus
+                            class="rounded invalid:border-red dark:bg-slate-900";
                         textarea
-                          name="description"
-                          placeholder="Description"
-                          class="rounded invalid:border-red dark:bg-slate-900" {}
+                            name="description"
+                            placeholder="Description"
+                            class="rounded invalid:border-red dark:bg-slate-900" {}
                         div class="flex justify-between" {
                             button type="submit" name="submit" value="add" class=(BUTTON_SUCCESS) { span class="w-4 h-4 i-tabler-check"; }
                             a href="#!" class=(BUTTON_PRIMARY) { span class="w-4 h-4 i-tabler-x"; }
@@ -157,6 +161,63 @@ async fn games(State(state): State<Arc<AppState>>) -> Markup {
             }
         }),
     )
+}
+
+#[derive(TryFromMultipart)]
+struct GamesPayload {
+    submit: String,
+    name: Option<String>,
+    description: Option<String>,
+    slugs_all: Option<bool>,
+    slugs: Vec<String>,
+}
+
+async fn games_post(
+    State(state): State<Arc<AppState>>,
+    TypedMultipart(form): TypedMultipart<GamesPayload>,
+) -> impl IntoResponse {
+    match form.submit.as_str() {
+        "add" => {
+            sqlx::query!(
+                "INSERT INTO game (name, description) VALUES ($1, $2);",
+                form.name,
+                form.description
+            )
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        }
+        "remove" => {
+            if form.slugs_all.is_some_and(|a| a) {
+                sqlx::query!("DELETE FROM game;")
+                    .execute(&state.pool)
+                    .await
+                    .unwrap();
+            } else {
+                sqlx::query!("DELETE FROM game WHERE slug = ANY($1);", &form.slugs)
+                    .execute(&state.pool)
+                    .await
+                    .unwrap();
+            }
+        }
+        _ => {}
+    };
+
+    games(
+        sqlx::query_as!(Game, "SELECT slug, name FROM game;")
+            .fetch_all(&state.pool)
+            .await,
+    )
+    .await
+}
+
+async fn games_get(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    games(
+        sqlx::query_as!(Game, "SELECT slug, name FROM game;")
+            .fetch_all(&state.pool)
+            .await,
+    )
+    .await
 }
 
 struct AppState {
@@ -186,7 +247,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Router::new()
                 .route("/site.css", get(style))
                 .route("/", get(index))
-                .route("/games", get(games).post(games))
+                .route("/games", get(games_get).post(games_post))
                 .with_state(shared_state)
                 .into_make_service(),
         )
